@@ -12,7 +12,7 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
     const apiKey = req.headers['x-api-key'];
 
     if (!apiKey || apiKey !== config.proxyInternalApiKey) {
-        throw new ApiError('Unauthorized: Invalid or missing API key', 401);
+        throw new ApiError('Unauthorized: Invalid or missing Myway API key', 401);
     }
     next();
 };

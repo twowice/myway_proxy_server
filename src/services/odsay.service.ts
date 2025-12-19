@@ -11,7 +11,7 @@ class OdsayService {
     private readonly odsayCallCountKey = 'odsay_total_calls';
     private readonly odsayCallCountExpireKey = 'odsay_total_calls_expire';
 
-    private async checkAndIncrementOdsayCallCount(): Promise<void> {
+    private async checkOdsayCallLimit(): Promise<void> {
         if (!redis) {
             console.warn('Redis client not available. Odsay API call limit not enforced globally.');
             return;
@@ -31,14 +31,19 @@ class OdsayService {
         }
 
         const currentCallsStr = await redis.get(this.odsayCallCountKey);
-        let currentCalls = currentCallsStr ? parseInt(currentCallsStr, 10) : 0;
+        const currentCalls = currentCallsStr ? parseInt(currentCallsStr, 10) : 0;
 
         if (currentCalls >= this.apiCallLimitPerDay) {
             throw new ApiError('일일 Odsay API 호출 제한을 초과했습니다. 잠시 후 다시 시도해주세요.', 429);
         }
+    }
 
-        await redis.incr(this.odsayCallCountKey);
-        console.log(`ODsay API calls today: ${currentCalls + 1}/${this.apiCallLimitPerDay}`);
+    private async incrementOdsayCallCount(): Promise<void> {
+        if (!redis) {
+            return;
+        }
+        const currentCalls = await redis.incr(this.odsayCallCountKey);
+        console.log(`ODsay API calls today: ${currentCalls}/${this.apiCallLimitPerDay}`);
     }
 
     public async searchPubTransPath(
@@ -47,7 +52,7 @@ class OdsayService {
         ex: string,
         ey: string
     ): Promise<any> {
-        await this.checkAndIncrementOdsayCallCount();
+        await this.checkOdsayCallLimit();
         try {
             const response = await axios.get(`${this.baseUrl}/searchPubTransPathT`, {
                 params: {
@@ -58,6 +63,9 @@ class OdsayService {
                     apiKey: this.apiKey,
                 },
             });
+
+            // API 호출 성공 시에만 카운트 증가
+            await this.incrementOdsayCallCount();
             return response.data;
         } catch (error: any) {
             console.error('ODsay searchPubTransPathT API Error:', error.response?.data || error.message);
@@ -72,7 +80,7 @@ class OdsayService {
     }
 
     public async loadLane(mapObject: string): Promise<any> {
-        await this.checkAndIncrementOdsayCallCount();
+        await this.checkOdsayCallLimit();
         try {
             const response = await axios.get(`${this.baseUrl}/loadLane`, {
                 params: {
@@ -80,6 +88,9 @@ class OdsayService {
                     apiKey: this.apiKey,
                 },
             });
+
+            // API 호출 성공 시에만 카운트 증가
+            await this.incrementOdsayCallCount();
             return response.data;
         } catch (error: any) {
             console.error('ODsay loadLane API Error:', error.response?.data || error.message);

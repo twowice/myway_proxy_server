@@ -4,13 +4,14 @@ import axios from 'axios';
 import cors from 'cors';
 import odsayRoutes from './routes/odsay.routes';
 import errorHandler from './middlewares/errorHandler';
+import authMiddleware from './middlewares/authMiddleware';
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/odsay', odsayRoutes);
+app.use('/api/odsay', authMiddleware, odsayRoutes);
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
