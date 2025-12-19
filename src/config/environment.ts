@@ -10,7 +10,7 @@ interface Config {
 
 const config: Config = {
     odsayApiKey: process.env.ODSAY_API_KEY || '',
-    port: parseInt(process.env.PORT || '3001', 10),
+    port: parseInt(process.env.PORT || '3000', 10),
     proxyInternalApiKey: process.env.PROXY_INTERNAL_API_KEY,
     redisUrl: process.env.REDIS_URL
 };
