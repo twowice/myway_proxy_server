@@ -10,6 +10,11 @@ class OdsayService {
     private readonly apiCallLimitPerDay: number = 1000;
     private readonly odsayCallCountKey = 'odsay_total_calls';
     private readonly odsayCallCountExpireKey = 'odsay_total_calls_expire';
+    private readonly http = axios.create({
+        baseURL: 'https://api.odsay.com/v1/api',
+        paramsSerializer: (params) =>
+            new URLSearchParams(params as Record<string, string>).toString(),
+    });
 
     private async checkOdsayCallLimit(): Promise<void> {
         if (!redis) {
@@ -54,7 +59,7 @@ class OdsayService {
     ): Promise<any> {
         await this.checkOdsayCallLimit();
         try {
-            const response = await axios.get(`${this.baseUrl}/searchPubTransPathT`, {
+            const response = await this.http.get('/searchPubTransPathT', {
                 params: {
                     SX: sx,
                     SY: sy,
@@ -82,7 +87,7 @@ class OdsayService {
     public async loadLane(mapObject: string): Promise<any> {
         await this.checkOdsayCallLimit();
         try {
-            const response = await axios.get(`${this.baseUrl}/loadLane`, {
+            const response = await this.http.get('/loadLane', {
                 params: {
                     mapObject: mapObject,
                     apiKey: this.apiKey,
