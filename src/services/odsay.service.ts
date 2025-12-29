@@ -16,6 +16,46 @@ class OdsayService {
             new URLSearchParams(params as Record<string, string>).toString(),
     });
 
+    private buildSearchParams(
+        sx: string,
+        sy: string,
+        ex: string,
+        ey: string,
+        options?: {
+            opt?: string;
+            searchType?: string;
+            searchPathType?: string;
+            lang?: string;
+            output?: string;
+        }
+    ): Record<string, string> {
+        const params: Record<string, string> = {
+            SX: sx,
+            SY: sy,
+            EX: ex,
+            EY: ey,
+            apiKey: this.apiKey,
+        };
+
+        if (options?.opt) {
+            params.OPT = options.opt;
+        }
+        if (options?.searchType) {
+            params.SearchType = options.searchType;
+        }
+        if (options?.searchPathType) {
+            params.SearchPathType = options.searchPathType;
+        }
+        if (options?.lang) {
+            params.lang = options.lang;
+        }
+        if (options?.output) {
+            params.output = options.output;
+        }
+
+        return params;
+    }
+
     private async checkOdsayCallLimit(): Promise<void> {
         if (!redis) {
             console.warn('Redis client not available. Odsay API call limit not enforced globally.');
@@ -55,18 +95,20 @@ class OdsayService {
         sx: string,
         sy: string,
         ex: string,
-        ey: string
+        ey: string,
+        options?: {
+            opt?: string;
+            searchType?: string;
+            searchPathType?: string;
+            lang?: string;
+            output?: string;
+        }
     ): Promise<any> {
         await this.checkOdsayCallLimit();
         try {
+            const params = this.buildSearchParams(sx, sy, ex, ey, options);
             const response = await this.http.get('/searchPubTransPathT', {
-                params: {
-                    SX: sx,
-                    SY: sy,
-                    EX: ex,
-                    EY: ey,
-                    apiKey: this.apiKey,
-                },
+                params,
             });
 
             // API 호출 성공 시에만 카운트 증가
@@ -82,6 +124,118 @@ class OdsayService {
             }
             throw new ApiError('ODsay searchPubTransPathT API 호출 중 문제가 발생했습니다.', 500);
         }
+    }
+
+    public async searchPubTransPathWithSegments(
+        sx: string,
+        sy: string,
+        ex: string,
+        ey: string,
+        options?: {
+            opt?: string;
+            searchType?: string;
+            searchPathType?: string;
+            lang?: string;
+            output?: string;
+        }
+    ): Promise<any> {
+        const intercityResponse = await this.searchPubTransPath(sx, sy, ex, ey, options);
+        const searchType = Number(intercityResponse?.result?.searchType);
+
+        if (searchType !== 1 && searchType !== 2) {
+            return intercityResponse;
+        }
+
+        const intercityPath = intercityResponse?.result?.path?.[0];
+        const intercitySubPath = intercityPath?.subPath?.[0];
+        const startX = intercitySubPath?.startX;
+        const startY = intercitySubPath?.startY;
+        const endX = intercitySubPath?.endX;
+        const endY = intercitySubPath?.endY;
+
+        if (!startX || !startY || !endX || !endY) {
+            return intercityResponse;
+        }
+
+        const localOptions = {
+            ...options,
+            searchType: '0',
+        };
+
+        const [originResult, destinationResult] = await Promise.allSettled([
+            this.searchPubTransPath(
+                sx,
+                sy,
+                String(startX),
+                String(startY),
+                localOptions
+            ),
+            this.searchPubTransPath(
+                String(endX),
+                String(endY),
+                ex,
+                ey,
+                localOptions
+            ),
+        ]);
+
+        if (originResult.status !== 'fulfilled' || destinationResult.status !== 'fulfilled') {
+            return intercityResponse;
+        }
+
+        const originResponse = originResult.value;
+        const destinationResponse = destinationResult.value;
+        const originPath = originResponse?.result?.path?.[0];
+        const destinationPath = destinationResponse?.result?.path?.[0];
+
+        if (!originPath?.subPath || !destinationPath?.subPath || !intercityPath?.subPath) {
+            return intercityResponse;
+        }
+
+        const toNumber = (value: unknown): number => {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : 0;
+        };
+
+        const originInfo = originPath?.info ?? {};
+        const destinationInfo = destinationPath?.info ?? {};
+        const intercityInfo = intercityPath?.info ?? {};
+
+        const totalTime =
+            toNumber(originInfo.totalTime) +
+            toNumber(intercityInfo.totalTime) +
+            toNumber(destinationInfo.totalTime);
+        const totalPayment =
+            toNumber(originInfo.payment) +
+            toNumber(intercityInfo.totalPayment) +
+            toNumber(destinationInfo.payment);
+        const totalDistance =
+            toNumber(originInfo.totalDistance) +
+            toNumber(intercityInfo.totalDistance) +
+            toNumber(destinationInfo.totalDistance);
+
+        const combinedPath = {
+            ...intercityPath,
+            info: {
+                ...intercityInfo,
+                totalTime,
+                totalPayment,
+                totalDistance,
+            },
+            subPath: [
+                ...originPath.subPath,
+                ...intercityPath.subPath,
+                ...destinationPath.subPath,
+            ],
+        };
+
+        return {
+            ...intercityResponse,
+            result: {
+                ...intercityResponse.result,
+                path: [combinedPath],
+            },
+        };
     }
 
     public async loadLane(mapObject: string): Promise<any> {
