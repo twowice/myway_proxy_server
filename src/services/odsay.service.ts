@@ -146,14 +146,8 @@ class OdsayService {
             return intercityResponse;
         }
 
-        const intercityPath = intercityResponse?.result?.path?.[0];
-        const intercitySubPath = intercityPath?.subPath?.[0];
-        const startX = intercitySubPath?.startX;
-        const startY = intercitySubPath?.startY;
-        const endX = intercitySubPath?.endX;
-        const endY = intercitySubPath?.endY;
-
-        if (!startX || !startY || !endX || !endY) {
+        const intercityPaths = intercityResponse?.result?.path;
+        if (!Array.isArray(intercityPaths) || intercityPaths.length === 0) {
             return intercityResponse;
         }
 
@@ -162,78 +156,94 @@ class OdsayService {
             searchType: '0',
         };
 
-        const [originResult, destinationResult] = await Promise.allSettled([
-            this.searchPubTransPath(
-                sx,
-                sy,
-                String(startX),
-                String(startY),
-                localOptions
-            ),
-            this.searchPubTransPath(
-                String(endX),
-                String(endY),
-                ex,
-                ey,
-                localOptions
-            ),
-        ]);
-
-        if (originResult.status !== 'fulfilled' || destinationResult.status !== 'fulfilled') {
-            return intercityResponse;
-        }
-
-        const originResponse = originResult.value;
-        const destinationResponse = destinationResult.value;
-        const originPath = originResponse?.result?.path?.[0];
-        const destinationPath = destinationResponse?.result?.path?.[0];
-
-        if (!originPath?.subPath || !destinationPath?.subPath || !intercityPath?.subPath) {
-            return intercityResponse;
-        }
-
         const toNumber = (value: unknown): number => {
             const num = Number(value);
             return Number.isFinite(num) ? num : 0;
         };
 
-        const originInfo = originPath?.info ?? {};
-        const destinationInfo = destinationPath?.info ?? {};
-        const intercityInfo = intercityPath?.info ?? {};
+        const combinedPaths = await Promise.all(
+            intercityPaths.map(async (intercityPath: any) => {
+                const intercitySubPath = intercityPath?.subPath?.find((subPath: any) =>
+                    subPath?.trafficType === 4 || subPath?.trafficType === 5
+                );
+                const startX = intercitySubPath?.startX;
+                const startY = intercitySubPath?.startY;
+                const endX = intercitySubPath?.endX;
+                const endY = intercitySubPath?.endY;
 
-        const totalTime =
-            toNumber(originInfo.totalTime) +
-            toNumber(intercityInfo.totalTime) +
-            toNumber(destinationInfo.totalTime);
-        const totalPayment =
-            toNumber(originInfo.payment) +
-            toNumber(intercityInfo.totalPayment) +
-            toNumber(destinationInfo.payment);
-        const totalDistance =
-            toNumber(originInfo.totalDistance) +
-            toNumber(intercityInfo.totalDistance) +
-            toNumber(destinationInfo.totalDistance);
+                if (!startX || !startY || !endX || !endY) {
+                    return intercityPath;
+                }
 
-        const combinedPath = {
-            ...intercityPath,
-            info: {
-                ...intercityInfo,
-                totalTime,
-                totalPayment,
-                totalDistance,
-            },
-            subPath: [
-                ...originPath.subPath,
-                ...intercityPath.subPath,
-                ...destinationPath.subPath,
-            ],
-        };
+                const [originResult, destinationResult] = await Promise.allSettled([
+                    this.searchPubTransPath(
+                        sx,
+                        sy,
+                        String(startX),
+                        String(startY),
+                        localOptions
+                    ),
+                    this.searchPubTransPath(
+                        String(endX),
+                        String(endY),
+                        ex,
+                        ey,
+                        localOptions
+                    ),
+                ]);
+
+                if (originResult.status !== 'fulfilled' || destinationResult.status !== 'fulfilled') {
+                    return intercityPath;
+                }
+
+                const originResponse = originResult.value;
+                const destinationResponse = destinationResult.value;
+                const originPath = originResponse?.result?.path?.[0];
+                const destinationPath = destinationResponse?.result?.path?.[0];
+
+                if (!originPath?.subPath || !destinationPath?.subPath || !intercityPath?.subPath) {
+                    return intercityPath;
+                }
+
+                const originInfo = originPath?.info ?? {};
+                const destinationInfo = destinationPath?.info ?? {};
+                const intercityInfo = intercityPath?.info ?? {};
+
+                const totalTime =
+                    toNumber(originInfo.totalTime) +
+                    toNumber(intercityInfo.totalTime) +
+                    toNumber(destinationInfo.totalTime);
+                const totalPayment =
+                    toNumber(originInfo.payment) +
+                    toNumber(intercityInfo.totalPayment) +
+                    toNumber(destinationInfo.payment);
+                const totalDistance =
+                    toNumber(originInfo.totalDistance) +
+                    toNumber(intercityInfo.totalDistance) +
+                    toNumber(destinationInfo.totalDistance);
+
+                return {
+                    ...intercityPath,
+                    info: {
+                        ...intercityInfo,
+                        totalTime,
+                        totalPayment,
+                        totalDistance,
+                    },
+                    subPath: [
+                        ...originPath.subPath,
+                        ...intercityPath.subPath,
+                        ...destinationPath.subPath,
+                    ],
+                };
+            })
+        );
 
         return {
             ...intercityResponse,
             result: {
                 ...intercityResponse.result,
-                path: [combinedPath],
+                path: combinedPaths,
             },
         };
     }
