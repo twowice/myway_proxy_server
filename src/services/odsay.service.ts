@@ -3,6 +3,7 @@ import axios from 'axios';
 import config from '../config/environment';
 import redis from '../utils/redisClient';
 import ApiError from '../utils/apiErrors';
+import { formatLogTimestamp, getDateKey, getSecondsUntilEndOfDay } from '../utils/timezone';
 
 class OdsayService {
     private readonly baseUrl: string = 'https://api.odsay.com/v1/api';
@@ -22,15 +23,13 @@ class OdsayService {
             return;
         }
 
-        const today = new Date().toISOString().split('T')[0];
+        const today = getDateKey();
         const currentDay = await redis.get(this.odsayCallCountExpireKey);
 
         if (currentDay !== today) {
             await redis.set(this.odsayCallCountKey, 0);
             await redis.set(this.odsayCallCountExpireKey, today);
-            const now = new Date();
-            const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-            const secondsUntilMidnight = Math.floor((endOfToday.getTime() - now.getTime()) / 1000);
+            const secondsUntilMidnight = getSecondsUntilEndOfDay();
             await redis.expire(this.odsayCallCountKey, secondsUntilMidnight);
             await redis.expire(this.odsayCallCountExpireKey, secondsUntilMidnight);
         }
@@ -48,7 +47,7 @@ class OdsayService {
             return;
         }
         const currentCalls = await redis.incr(this.odsayCallCountKey);
-        console.log(`ODsay API calls today: ${currentCalls}/${this.apiCallLimitPerDay}`);
+        console.log(`[${formatLogTimestamp()}] ODsay API calls today: ${currentCalls}/${this.apiCallLimitPerDay}`);
     }
 
     public async searchPubTransPath(
