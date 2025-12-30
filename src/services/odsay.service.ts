@@ -163,13 +163,31 @@ class OdsayService {
 
         const combinedPaths = await Promise.all(
             intercityPaths.map(async (intercityPath: any) => {
-                const intercitySubPath = intercityPath?.subPath?.find((subPath: any) =>
-                    subPath?.trafficType === 4 || subPath?.trafficType === 5
-                );
-                const startX = intercitySubPath?.startX;
-                const startY = intercitySubPath?.startY;
-                const endX = intercitySubPath?.endX;
-                const endY = intercitySubPath?.endY;
+                const subPaths = intercityPath?.subPath;
+                if (!Array.isArray(subPaths) || subPaths.length === 0) {
+                    return intercityPath;
+                }
+
+                const intercityIndices = subPaths
+                    .map((subPath: any, index: number) => ({
+                        index,
+                        isIntercity: subPath?.trafficType === 4 || subPath?.trafficType === 5,
+                    }))
+                    .filter((entry: { index: number; isIntercity: boolean }) => entry.isIntercity)
+                    .map((entry: { index: number; isIntercity: boolean }) => entry.index);
+
+                if (intercityIndices.length === 0) {
+                    return intercityPath;
+                }
+
+                const firstIntercityIndex = intercityIndices[0];
+                const lastIntercityIndex = intercityIndices[intercityIndices.length - 1];
+                const firstIntercitySubPath = subPaths[firstIntercityIndex];
+                const lastIntercitySubPath = subPaths[lastIntercityIndex];
+                const startX = firstIntercitySubPath?.startX;
+                const startY = firstIntercitySubPath?.startY;
+                const endX = lastIntercitySubPath?.endX;
+                const endY = lastIntercitySubPath?.endY;
 
                 if (!startX || !startY || !endX || !endY) {
                     return intercityPath;
@@ -201,7 +219,12 @@ class OdsayService {
                 const originPath = originResponse?.result?.path?.[0];
                 const destinationPath = destinationResponse?.result?.path?.[0];
 
-                if (!originPath?.subPath || !destinationPath?.subPath || !intercityPath?.subPath) {
+                const intercitySegmentSubPaths = subPaths.slice(
+                    firstIntercityIndex,
+                    lastIntercityIndex + 1
+                );
+
+                if (!originPath?.subPath || !destinationPath?.subPath) {
                     return intercityPath;
                 }
 
@@ -232,7 +255,7 @@ class OdsayService {
                     },
                     subPath: [
                         ...originPath.subPath,
-                        ...intercityPath.subPath,
+                        ...intercitySegmentSubPaths,
                         ...destinationPath.subPath,
                     ],
                 };
